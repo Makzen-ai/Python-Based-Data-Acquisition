@@ -2,7 +2,7 @@ import nidaqmx
 import pandas as pd
 from nidaqmx.constants import AcquisitionType, TemperatureUnits, ThermocoupleType
 import time
-from tabulate import tabulate  # Install using `pip install tabulate`
+from tabulate import tabulate 
 
 def acquire_infinite_data(task, duration):
     """Acquire data for a specific duration."""
