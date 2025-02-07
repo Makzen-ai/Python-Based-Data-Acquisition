@@ -1,0 +1,72 @@
+import nidaqmx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from nidaqmx.constants import AcquisitionType, Coupling, ExcitationSource
+from tabulate import tabulate  # Install via pip install tabulate
+
+# Configuration parameters
+SENSOR_CHANNEL = "cDAQ1Mod1/ai0"  # Replace with actual channel name
+IEPE_CURRENT = 0.002  # 2 mA excitation current
+SENSITIVITY = 10.16  # Sensor sensitivity in mV/g
+
+# Get user inputs for sampling rate and samples per channel
+SAMPLING_RATE = float(input("Enter sampling rate (Hz): "))
+SAMPLES_PER_CHANNEL = int(input("Enter number of samples per channel: "))
+
+# Create a task for the NI 9234 module
+with nidaqmx.Task() as task:
+    # Add analog input voltage channel
+    task.ai_channels.add_ai_voltage_chan(
+        SENSOR_CHANNEL,
+        min_val=-5,
+        max_val=5
+    )
+
+    # Configure IEPE excitation and AC coupling
+    task.ai_channels.ai_coupling = Coupling.AC  # For DC Coupling use .DC
+    task.ai_channels.ai_excit_src = ExcitationSource.INTERNAL
+    task.ai_channels.ai_excit_val = IEPE_CURRENT
+
+    # Configure timing settings
+    task.timing.cfg_samp_clk_timing(
+        rate=SAMPLING_RATE,
+        sample_mode=AcquisitionType.FINITE,
+        samps_per_chan=SAMPLES_PER_CHANNEL
+    )
+
+    print("Acquiring vibration data...")
+    # Read the vibration data
+    vibration_data = task.read(number_of_samples_per_channel=SAMPLES_PER_CHANNEL)
+
+    # Convert voltage to acceleration
+    acceleration = np.array(vibration_data) / (SENSITIVITY / 1000)  # Convert mV to g
+
+    # Print peak acceleration
+    peak_acceleration = np.max(np.abs(acceleration))
+    print(f"Peak acceleration: {peak_acceleration:.2f} g")
+
+    # Generate a time array for plotting
+    time = np.arange(len(acceleration)) / SAMPLING_RATE
+
+    # Display data in tabular form in the console
+    print("\nAcquired Data:")
+    table = [[i + 1, t, a] for i, (t, a) in enumerate(zip(time, acceleration))]
+    print(tabulate(table, headers=["Sample Number", "Time (s)", "Acceleration (g)"], tablefmt="grid"))
+
+    # Plot the acceleration data
+    plt.figure(figsize=(10, 6))
+    plt.plot(time, acceleration)
+    plt.title("Vibration Measurement")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Acceleration (g)")
+    plt.grid(True)
+    plt.show()
+
+    # Save data to Excel
+    df = pd.DataFrame({"Sample Number": range(1, len(acceleration) + 1),
+                       "Time (s)": time,
+                       "Acceleration (g)": acceleration})
+    excel_file = "vibration_data.xlsx"
+    df.to_excel(excel_file, index=False, sheet_name="Vibration Data")
+    print(f"\nData saved to {excel_file}")
