@@ -3,18 +3,18 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from nidaqmx.constants import AcquisitionType, Coupling, ExcitationSource
-from tabulate import tabulate  # Install via pip install tabulate
+from tabulate import tabulate  
 
 # Configuration parameters
-SENSOR_CHANNEL = "cDAQ1Mod1/ai0"  # Replace with actual channel name
+SENSOR_CHANNEL = "cDAQ1Mod1/ai0"  #  channel name
 IEPE_CURRENT = 0.002  # 2 mA excitation current
 SENSITIVITY = 10.16  # Sensor sensitivity in mV/g
 
-# Get user inputs for sampling rate and samples per channel
+# User input for sampling rate and samples per channel
 SAMPLING_RATE = float(input("Enter sampling rate (Hz): "))
 SAMPLES_PER_CHANNEL = int(input("Enter number of samples per channel: "))
 
-# Create a task for the NI 9234 module
+# Creating task for the NI 9234 module
 with nidaqmx.Task() as task:
     # Add analog input voltage channel
     task.ai_channels.add_ai_voltage_chan(
