@@ -1,0 +1,176 @@
+import nidaqmx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from nidaqmx.constants import (
+    AcquisitionType,
+    TemperatureUnits,
+    ThermocoupleType,
+    Coupling,
+    ExcitationSource,
+)
+import sqlite3
+import time
+
+# Configuration parameters
+THERMOCOUPLE_CHANNEL = "cDAQ1Mod2/ai0"  # Replace with your thermocouple channel
+ACCELEROMETER_CHANNEL = "cDAQ1Mod1/ai0" # Replace with your accelerometer channel
+IEPE_CURRENT = 0.002   # 2 mA excitation current
+SENSITIVITY = 10.16    # Sensor sensitivity in mV/g
+THERMOCOUPLE_RATE = 2.0  # Fixed at 2 Hz
+
+def save_to_sqlite(tc_times, tc_data, accel_times, acceleration):
+    """Save thermocouple and accelerometer data to SQLite database."""
+    conn = sqlite3.connect("combined_data.db")
+    cursor = conn.cursor()
+
+    # Create tables if they don't exist
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ThermocoupleData (
+            time REAL,
+            temperature REAL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS AccelerometerData (
+            time REAL,
+            acceleration REAL
+        )
+    """)
+
+    # Insert thermocouple data
+    cursor.executemany("INSERT INTO ThermocoupleData (time, temperature) VALUES (?, ?)",
+                       zip(tc_times, tc_data))
+
+    # Insert accelerometer data
+    cursor.executemany("INSERT INTO AccelerometerData (time, acceleration) VALUES (?, ?)",
+                       zip(accel_times, acceleration))
+
+    conn.commit()
+    conn.close()
+    print("Data saved to SQLite database (combined_data.db).")
+
+if __name__ == "__main__":
+    # User inputs
+    duration = float(input("Enter total duration in seconds: "))
+    accel_rate = float(input("Enter accelerometer sampling rate (Hz): "))
+
+    # Countdown before start
+    print("Starting in:")
+    for i in range(5, 0, -1):
+        print(f"{i}...")
+        time.sleep(1)
+    print("Acquisition started.")
+
+    # Creates tasks for thermocouple and accelerometer
+    with nidaqmx.Task() as tc_task, nidaqmx.Task() as accel_task:
+        # Configures thermocouple channel
+        tc_task.ai_channels.add_ai_thrmcpl_chan(
+            THERMOCOUPLE_CHANNEL,
+            units=TemperatureUnits.DEG_C,
+            thermocouple_type=ThermocoupleType.K,
+        )
+        tc_task.timing.cfg_samp_clk_timing(
+            rate=THERMOCOUPLE_RATE, sample_mode=AcquisitionType.CONTINUOUS
+        )
+
+        # Configures accelerometer channel
+        accel_channel = accel_task.ai_channels.add_ai_voltage_chan(
+            ACCELEROMETER_CHANNEL, min_val=-5, max_val=5
+        )
+        accel_channel.ai_coupling = Coupling.AC
+        accel_channel.ai_excit_src = ExcitationSource.INTERNAL
+        accel_channel.ai_excit_val = IEPE_CURRENT
+        accel_task.timing.cfg_samp_clk_timing(
+            rate=accel_rate, sample_mode=AcquisitionType.CONTINUOUS
+        )
+
+        # Start tasks
+        tc_task.start()
+        accel_task.start()
+
+        # Initializes data storage
+        tc_data = []
+        accel_data = []
+        tc_times = []
+        accel_times = []
+
+        print(f"Acquiring data for {duration} seconds...")
+        start_time = time.time()
+
+        # Acquires data until duration is reached
+        while time.time() - start_time < duration:
+            # Read one thermocouple sample
+            tc_sample = tc_task.read(number_of_samples_per_channel=1)
+            tc_data.extend(tc_sample)
+            tc_times.append(time.time() - start_time)
+
+            # Reads one accelerometer sample
+            accel_sample = accel_task.read(number_of_samples_per_channel=1)
+            accel_data.extend([accel_sample])
+            accel_times.append(time.time() - start_time)
+
+        # Stops tasks
+        tc_task.stop()
+        accel_task.stop()
+
+    # Converts lists to arrays
+    tc_data = np.array(tc_data)
+    tc_times = np.array(tc_times)
+    accel_data = np.array(accel_data)
+    accel_times = np.array(accel_times)
+
+    # Converts accelerometer voltage to acceleration
+    acceleration = accel_data / (SENSITIVITY / 1000.0)  # Convert mV to g
+
+    # Save data to SQLite
+    save_to_sqlite(tc_times, tc_data, accel_times, acceleration)
+
+    # Saves data to Excel in two separate sheets
+    excel_file = "combined_data.xlsx"
+    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+        # Thermocouple sheet
+        tc_df = pd.DataFrame({
+            "Time (s)": tc_times,
+            "Temperature (\u00b0C)": tc_data
+        })
+        tc_df.to_excel(writer, index=False, sheet_name="Thermocouple Data")
+
+        # Accelerometer sheet
+        accel_df = pd.DataFrame({
+            "Time (s)": accel_times,
+            "Acceleration (g)": acceleration
+        })
+        accel_df.to_excel(writer, index=False, sheet_name="Accelerometer Data")
+
+    print(f"\nData saved to {excel_file}")
+
+    # Plots both datasets on the same chart
+    fig_combined, ax1 = plt.subplots(figsize=(12, 6))
+    ax2 = ax1.twinx()
+
+    ax1.plot(tc_times, tc_data, 'r-', label='Temperature (\u00b0C)')
+    ax2.plot(accel_times, acceleration, 'b-', label='Acceleration (g)')
+
+    ax1.set_xlabel('Time (s)')
+    ax1.set_ylabel('Temperature (\u00b0C)', color='r')
+    ax2.set_ylabel('Acceleration (g)', color='b')
+    ax1.set_title('Thermocouple and Accelerometer Data on Same Chart')
+
+    # Individual Thermocouple Plot
+    fig_tc, ax_tc = plt.subplots(figsize=(10, 4))
+    ax_tc.plot(tc_times, tc_data, 'r-')
+    ax_tc.set_xlabel('Time (s)')
+    ax_tc.set_ylabel('Temperature (\u00b0C)', color='r')
+    ax_tc.set_title('Thermocouple Data')
+
+    # Individual Accelerometer Plot
+    fig_accel, ax_accel = plt.subplots(figsize=(10, 4))
+    ax_accel.plot(accel_times, acceleration, 'b-')
+    ax_accel.set_xlabel('Time (s)')
+    ax_accel.set_ylabel('Acceleration (g)', color='b')
+    ax_accel.set_title('Accelerometer Data')
+
+    # Shows all plots
+    plt.show()
