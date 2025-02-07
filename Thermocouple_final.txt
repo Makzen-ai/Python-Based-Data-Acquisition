@@ -1,0 +1,60 @@
+import nidaqmx
+import pandas as pd
+from nidaqmx.constants import AcquisitionType, TemperatureUnits, ThermocoupleType
+import time
+from tabulate import tabulate  # Install using `pip install tabulate`
+
+def acquire_infinite_data(task, duration):
+    """Acquire data for a specific duration."""
+    print(f"Acquiring data for {duration} seconds...")
+    start_time = time.time()
+    data = []
+    while time.time() - start_time < duration:
+        chunk = task.read(number_of_samples_per_channel=10)
+        data.extend(chunk)
+        print(f"Acquired {len(data)} samples.")
+    return data
+
+def acquire_finite_data(task, num_samples):
+    """Acquire a finite number of samples."""
+    print(f"Acquiring {num_samples} samples...")
+    task.timing.cfg_samp_clk_timing(10.0, sample_mode=AcquisitionType.FINITE, samps_per_chan=num_samples)
+    data = task.read(number_of_samples_per_channel=num_samples)
+    print(f"Acquired {len(data)} samples.")
+    return data
+
+# Main program
+if __name__ == "__main__":
+    mode = input("Choose acquisition mode ('infinite' or 'finite'): ").strip().lower()
+
+    with nidaqmx.Task() as task:
+        # Add thermocouple channel
+        task.ai_channels.add_ai_thrmcpl_chan(
+            "cDAQ1Mod2/ai0",
+            units=TemperatureUnits.DEG_C,
+            thermocouple_type=ThermocoupleType.K,
+        )
+
+        if mode == "infinite":
+            duration = int(input("Enter duration in seconds: "))
+            task.timing.cfg_samp_clk_timing(10.0, sample_mode=AcquisitionType.CONTINUOUS)
+            data = acquire_infinite_data(task, duration)
+
+        elif mode == "finite":
+            num_samples = int(input("Enter number of samples: "))
+            data = acquire_finite_data(task, num_samples)
+
+        else:
+            print("Invalid mode selected. Please choose 'infinite' or 'finite'.")
+            exit()
+
+        # Display data in tabular form
+        print("\nAcquired Data:")
+        table = [[i + 1, value] for i, value in enumerate(data)]
+        print(tabulate(table, headers=["Sample Number", "Temperature (°C)"], tablefmt="grid"))
+
+        # Save data to Excel
+        df = pd.DataFrame({"Sample Number": range(1, len(data) + 1), "Temperature (°C)": data})
+        excel_file = "temperature_data.xlsx"
+        df.to_excel(excel_file, index=False, sheet_name="Temperature Data")
+        print(f"\nData saved to {excel_file}")
