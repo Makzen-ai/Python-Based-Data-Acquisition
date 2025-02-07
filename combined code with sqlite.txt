@@ -13,8 +13,8 @@ import sqlite3
 import time
 
 # Configuration parameters
-THERMOCOUPLE_CHANNEL = "cDAQ1Mod2/ai0"  # Replace with your thermocouple channel
-ACCELEROMETER_CHANNEL = "cDAQ1Mod1/ai0" # Replace with your accelerometer channel
+THERMOCOUPLE_CHANNEL = "cDAQ1Mod2/ai0"  #  thermocouple channel
+ACCELEROMETER_CHANNEL = "cDAQ1Mod1/ai0" #  accelerometer channel
 IEPE_CURRENT = 0.002   # 2 mA excitation current
 SENSITIVITY = 10.16    # Sensor sensitivity in mV/g
 THERMOCOUPLE_RATE = 2.0  # Fixed at 2 Hz
@@ -24,7 +24,7 @@ def save_to_sqlite(tc_times, tc_data, accel_times, acceleration):
     conn = sqlite3.connect("combined_data.db")
     cursor = conn.cursor()
 
-    # Create tables if they don't exist
+    # Create table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS ThermocoupleData (
             time REAL,
@@ -52,7 +52,7 @@ def save_to_sqlite(tc_times, tc_data, accel_times, acceleration):
     print("Data saved to SQLite database (combined_data.db).")
 
 if __name__ == "__main__":
-    # User inputs
+    # User input
     duration = float(input("Enter total duration in seconds: "))
     accel_rate = float(input("Enter accelerometer sampling rate (Hz): "))
 
@@ -63,9 +63,9 @@ if __name__ == "__main__":
         time.sleep(1)
     print("Acquisition started.")
 
-    # Creates tasks for thermocouple and accelerometer
+    # Create tasks for thermocouple and accelerometer
     with nidaqmx.Task() as tc_task, nidaqmx.Task() as accel_task:
-        # Configures thermocouple channel
+        # Configure thermocouple channel
         tc_task.ai_channels.add_ai_thrmcpl_chan(
             THERMOCOUPLE_CHANNEL,
             units=TemperatureUnits.DEG_C,
@@ -75,7 +75,7 @@ if __name__ == "__main__":
             rate=THERMOCOUPLE_RATE, sample_mode=AcquisitionType.CONTINUOUS
         )
 
-        # Configures accelerometer channel
+        # Configure accelerometer channel
         accel_channel = accel_task.ai_channels.add_ai_voltage_chan(
             ACCELEROMETER_CHANNEL, min_val=-5, max_val=5
         )
@@ -90,7 +90,7 @@ if __name__ == "__main__":
         tc_task.start()
         accel_task.start()
 
-        # Initializes data storage
+        # Initialize data storage
         tc_data = []
         accel_data = []
         tc_times = []
@@ -99,35 +99,34 @@ if __name__ == "__main__":
         print(f"Acquiring data for {duration} seconds...")
         start_time = time.time()
 
-        # Acquires data until duration is reached
+        # Acquire data until duration is reached
         while time.time() - start_time < duration:
-            # Read one thermocouple sample
             tc_sample = tc_task.read(number_of_samples_per_channel=1)
             tc_data.extend(tc_sample)
             tc_times.append(time.time() - start_time)
 
-            # Reads one accelerometer sample
+            
             accel_sample = accel_task.read(number_of_samples_per_channel=1)
             accel_data.extend([accel_sample])
             accel_times.append(time.time() - start_time)
 
-        # Stops tasks
+        # Stop tasks
         tc_task.stop()
         accel_task.stop()
 
-    # Converts lists to arrays
+    # Convert lists to arrays
     tc_data = np.array(tc_data)
     tc_times = np.array(tc_times)
     accel_data = np.array(accel_data)
     accel_times = np.array(accel_times)
 
-    # Converts accelerometer voltage to acceleration
+    # Convert accelerometer voltage to acceleration
     acceleration = accel_data / (SENSITIVITY / 1000.0)  # Convert mV to g
 
     # Save data to SQLite
     save_to_sqlite(tc_times, tc_data, accel_times, acceleration)
 
-    # Saves data to Excel in two separate sheets
+    # Save data to Excel in two separate sheets
     excel_file = "combined_data.xlsx"
     with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
         # Thermocouple sheet
@@ -146,7 +145,7 @@ if __name__ == "__main__":
 
     print(f"\nData saved to {excel_file}")
 
-    # Plots both datasets on the same chart
+    # Plot both datasets on the same chart
     fig_combined, ax1 = plt.subplots(figsize=(12, 6))
     ax2 = ax1.twinx()
 
